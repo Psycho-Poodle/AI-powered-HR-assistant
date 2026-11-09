@@ -1,0 +1,26 @@
+{
+  "name": "hr-workspace",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "typecheck": "tsc --noEmit",
+    "build": "tsc --noEmit && vite build",
+    "test": "node --experimental-strip-types --test tests/*.test.ts",
+    "smoke": "node tests/smoke.mjs"
+  },
+  "dependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "typescript": "~5.7.3",
+    "vite": "^7.0.0",
+    "@playwright/test": "^1.51.0",
+    "@types/node": "^22.0.0",
+    "prettier": "^3.0.0"
+  }
+}

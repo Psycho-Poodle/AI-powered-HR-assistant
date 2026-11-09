@@ -1,0 +1,77 @@
+services:
+  db:
+    image: pgvector/pgvector:0.8.0-pg16
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-hr_dev}
+      POSTGRES_USER: ${POSTGRES_USER:-hr_dev}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - dev_pgdata:/var/lib/postgresql/data
+      - ./docker/postgres/001-vector.sql:/docker-entrypoint-initdb.d/001-vector.sql:ro
+    networks: [dev]
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+
+  db_test:
+    image: pgvector/pgvector:0.8.0-pg16
+    environment:
+      POSTGRES_DB: ${TEST_POSTGRES_DB:-hr_test}
+      POSTGRES_USER: ${TEST_POSTGRES_USER:-hr_test}
+      POSTGRES_PASSWORD: ${TEST_POSTGRES_PASSWORD:?Set TEST_POSTGRES_PASSWORD in .env}
+    ports:
+      - "127.0.0.1:${TEST_POSTGRES_PORT:-5433}:5432"
+    volumes:
+      - test_pgdata:/var/lib/postgresql/data
+      - ./docker/postgres/001-vector.sql:/docker-entrypoint-initdb.d/001-vector.sql:ro
+    networks: [test]
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+
+  api:
+    build: ./backend
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-hr_dev}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/${POSTGRES_DB:-hr_dev}
+      SESSION_SECRET: ${SESSION_SECRET:?Set a random SESSION_SECRET of at least 32 characters}
+      APP_ORIGIN: ${APP_ORIGIN:-http://localhost:8000}
+      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-true}
+    ports:
+      - "127.0.0.1:${API_PORT:-8000}:8000"
+    networks: [dev]
+    volumes:
+      - ./seed:/seed:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health/live', timeout=3)"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  frontend:
+    profiles: [ui]
+    build: ./frontend
+    ports:
+      - "127.0.0.1:${FRONTEND_PORT:-5173}:80"
+    networks: [dev]
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  dev_pgdata:
+  test_pgdata:
+
+networks:
+  dev:
+  test:

@@ -1,0 +1,1 @@
+"""HR chat assistant backend."""

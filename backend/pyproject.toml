@@ -1,0 +1,46 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hr-chat-assistant"
+version = "0.1.0"
+description = "HR chat assistant backend foundation"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.116.1,<1.0",
+    "uvicorn>=0.35.0,<1.0",
+    "pydantic-settings>=2.7,<3",
+    "psycopg[binary]>=3.2,<4",
+    "sqlalchemy>=2.0,<3",
+    "alembic>=1.14,<2",
+    "pgvector>=0.3,<1",
+    "argon2-cffi>=23.1,<26",
+    "sentence-transformers>=3.4,<4",
+    "transformers>=4.48,<4.50",
+    "torch>=2.6,<3",
+]
+
+[project.optional-dependencies]
+dev = [
+    "httpx>=0.28.1,<1.0",
+    "pytest>=8.3.4,<9.0",
+    "ruff>=0.11.10,<1.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "--strict-config --strict-markers --import-mode=importlib"
+markers = ["integration: requires live development and test PostgreSQL services"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 88
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]

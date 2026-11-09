@@ -1,0 +1,10 @@
+*
+!pyproject.toml
+!app/
+!app/**
+!alembic.ini
+!logging.json
+!migrations/
+!migrations/**
+**/__pycache__/
+**/*.pyc
