@@ -14,6 +14,7 @@ from app import main
 from app.agent.fake_llm import FakeLLM, FakeLLMPause
 from app.agent.task_runner import TaskRunner
 from app.api.conversations import get_job_engine
+from app.api.leave import get_mutation_engine
 from app.auth.dependencies import get_db
 from app.core.config import AuthSettings, Settings, get_auth_settings
 from app.db.models import Message, Task, TaskMessage
@@ -50,6 +51,7 @@ def running(booking_engine, monkeypatch):
 
     app.dependency_overrides[get_db] = db
     app.dependency_overrides[get_job_engine] = lambda: engine
+    app.dependency_overrides[get_mutation_engine] = lambda: engine
     app.dependency_overrides[get_auth_settings] = lambda: settings
     with TestClient(
         app, base_url="https://testserver", headers={"Origin": "https://testserver"}
@@ -84,6 +86,111 @@ def terminal(client, identifier):
             return row
         time.sleep(0.05)
     raise AssertionError(row)
+
+
+@pytest.mark.parametrize(
+    "message", ["Hello", "My balance", "Maybe leave?", "How do I apply for leave?"]
+)
+def test_read_only_tasks_cannot_prepare_proposals(running, message):
+    client, headers, gate, _ = running
+    identifier = enqueue(running, message)
+    gate.release.set()
+    row = terminal(client, identifier)
+    assert row["status"] == "completed"
+    assert row["workflow"] is None
+    response = client.post(
+        "/api/v1/leave/proposals",
+        headers=headers,
+        json={
+            "task_id": identifier,
+            "start_date": "2027-01-04",
+            "end_date": "2027-01-06",
+            "leave_type": "annual",
+        },
+    )
+    assert response.status_code == 409
+    assert response.json()["error"]["message"] == "leave_workflow_required"
+
+
+def test_explicit_workflow_continues_only_in_its_owned_conversation(running):
+    client, headers, gate, engine = running
+    first = enqueue(running, "Prepare a leave request")
+    gate.release.set()
+    row = terminal(client, first)
+    assert row["workflow"]["status"] == "collecting_dates"
+    with engine.connect() as c:
+        conversation = c.execute(
+            select(Task.conversation_id).where(Task.id == UUID(first))
+        ).scalar_one()
+
+    def follow(message):
+        queued = client.post(
+            f"/api/v1/conversations/{conversation}/tasks",
+            headers=headers,
+            json={"message": message},
+        )
+        assert queued.status_code == 202
+        return terminal(client, queued.json()["task_id"])
+
+    read = follow("My balance")
+    assert read["workflow"] is None
+    dated = follow("Use 2027-01-04 through 2027-01-06")
+    assert dated["workflow"]["status"] == "ready"
+    assert dated["workflow"]["origin_task_id"] == first
+    assert dated["workflow"]["task_id"] == dated["id"]
+    proposed = client.post(
+        "/api/v1/leave/proposals",
+        headers=headers,
+        json={
+            "task_id": dated["id"],
+            "start_date": "2027-01-04",
+            "end_date": "2027-01-06",
+        },
+    )
+    assert proposed.status_code == 201
+    proposal = proposed.json()
+    confirmed = client.post(
+        f"/api/v1/leave/proposals/{proposal['id']}/confirm",
+        headers=headers,
+        json={"expected_version": proposal["version"]},
+    )
+    assert confirmed.status_code == 200
+    assert follow("Use 2027-02-01 through 2027-02-03")["workflow"] is None
+    unrelated = enqueue(running, "Use 2027-02-01 through 2027-02-03")
+    assert terminal(client, unrelated)["workflow"] is None
+
+
+def test_provider_failure_is_terminal_without_fake_answer_or_booking(running):
+    from app.agent.errors import LLMFailure
+    from app.db.models import LeaveRequest
+
+    client, headers, _, engine = running
+
+    class FailedProvider(FakeLLM):
+        provider = "openai"
+        model = "gpt-5.4-mini"
+
+        async def plan(self, original_request):
+            raise LLMFailure("provider_unavailable")
+
+    client.app.state.task_runner.llm_factory = FailedProvider
+    conversation = client.post(
+        "/api/v1/conversations", headers=headers, json={}
+    ).json()["id"]
+    queued = client.post(
+        f"/api/v1/conversations/{conversation}/tasks",
+        headers=headers,
+        json={"message": "Prepare a leave request"},
+    )
+    row = terminal(client, queued.json()["task_id"])
+    execution = row["plan"]["execution"]
+    assert row["status"] == "failed" and row["workflow"] is None
+    assert execution["error"] == "provider_unavailable"
+    assert execution["provider"] == "openai" and execution["answer"] == ""
+    with engine.connect() as c:
+        assert (
+            c.execute(select(func.count()).select_from(LeaveRequest)).scalar_one() == 0
+        )
 
 
 def test_true_midrun_note_same_id_and_no_repeated_read(running, monkeypatch):

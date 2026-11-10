@@ -24,6 +24,7 @@ from app.schemas.proposals import (
     ProposalPayload,
     ProposalView,
 )
+from app.schemas.workflow import LeaveWorkflow
 from app.security.authorization import ActorContext
 from app.services.leave import HRToolError, validate_leave
 from app.stream.events import proposal_changed
@@ -139,18 +140,33 @@ def create_proposal(
 ):
     if not lock_actor(connection, actor):
         return ProposalFailure(403, "forbidden")
-    task = connection.execute(
-        select(Task.id)
-        .where(
-            Task.id == request.task_id,
-            Task.company_id == actor.company_id,
-            Task.owner_user_id == actor.user_id,
-            Task.status.in_(("completed", "awaiting_confirmation")),
+    task = (
+        connection.execute(
+            select(Task.id, Task.plan, Task.instruction_revision)
+            .where(
+                Task.id == request.task_id,
+                Task.company_id == actor.company_id,
+                Task.owner_user_id == actor.user_id,
+                Task.status.in_(("completed", "awaiting_confirmation")),
+            )
+            .with_for_update()
         )
-        .with_for_update()
-    ).scalar_one_or_none()
+        .mappings()
+        .one_or_none()
+    )
     if task is None:
         return ProposalFailure(404, "not_found")
+    try:
+        workflow = LeaveWorkflow.model_validate(
+            task["plan"].get("execution", {}).get("workflow")
+        )
+    except ValidationError:
+        return ProposalFailure(409, "leave_workflow_required")
+    if (
+        workflow.task_id != request.task_id
+        or workflow.revision != task["instruction_revision"]
+    ):
+        return ProposalFailure(409, "leave_workflow_required")
     dates = LeaveValidationInput(
         start_date=request.start_date,
         end_date=request.end_date,

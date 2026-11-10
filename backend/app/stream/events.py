@@ -9,6 +9,7 @@ from sqlalchemy import func, insert, select
 
 from app.db.models import Task, TaskEvent
 from app.repositories.policies import get_policy
+from app.schemas.workflow import LeaveWorkflow
 from app.tools.policy import PolicyToolResult
 
 
@@ -69,8 +70,13 @@ class Terminal(Payload):
     error: str | None = None
 
 
+class Workflow(Payload):
+    kind: Literal["task.workflow"] = "task.workflow"
+    workflow: LeaveWorkflow | None
+
+
 EventPayload = Annotated[
-    Status | Updated | ToolStatus | Delta | Proposal | Terminal,
+    Status | Updated | ToolStatus | Delta | Proposal | Terminal | Workflow,
     Field(discriminator="kind"),
 ]
 PAYLOAD = TypeAdapter(EventPayload)
@@ -136,6 +142,16 @@ def task_status(connection, row, status, *, outcome=None, error=None):
 
 
 def checkpoint(connection, row, state, terminal):
+    # Publish only a current server-validated workflow. Stale generation results
+    # remain inspectable, but can never reopen an outdated form.
+    if state.revision == row["instruction_revision"]:
+        append(
+            connection,
+            row["id"],
+            state.revision,
+            f"workflow:{state.revision}",
+            Workflow(workflow=state.workflow),
+        )
     # Stable status keys suppress duplicate checkpoints and recovered read retries.
     for result in state.subtasks:
         append(

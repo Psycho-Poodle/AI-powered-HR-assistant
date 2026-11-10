@@ -6,7 +6,12 @@ import {
   type Proposal,
   type Session,
   type Task,
+  type Runtime,
 } from "../api/client";
+import {
+  LeaveRequestForm,
+  type DateDraft,
+} from "../components/LeaveRequestForm";
 import { useTaskStream } from "../hooks/useTaskStream";
 
 const names: Record<string, string> = {
@@ -37,8 +42,8 @@ export function App() {
     [selected, setSelected] = useState<string | null>(null),
     [draft, setDraft] = useState("");
   const [proposals, setProposals] = useState<Record<string, Proposal>>({}),
-    [start, setStart] = useState(""),
-    [end, setEnd] = useState(""),
+    [dateDrafts, setDateDrafts] = useState<Record<string, DateDraft>>({}),
+    [runtime, setRuntime] = useState<Runtime | null>(null),
     [booking, setBooking] = useState("");
   const selectedRef = useRef(selected);
   selectedRef.current = selected;
@@ -68,8 +73,8 @@ export function App() {
     setDraft("");
     setProposals({});
     setBooking("");
-    setStart("");
-    setEnd("");
+    setDateDrafts({});
+    setRuntime(null);
   }
   async function refresh() {
     const id = selectedRef.current,
@@ -85,11 +90,23 @@ export function App() {
       )
         return;
       setTask(next);
-      const dates = next.plan.execution?.plan?.steps
-        .filter((s) => s.tool === "validate_leave_request")
-        .at(-1)?.args;
-      if (dates?.start_date) setStart(dates.start_date);
-      if (dates?.end_date) setEnd(dates.end_date);
+      if (next.proposals)
+        setProposals((old) => ({
+          ...old,
+          ...Object.fromEntries(next.proposals!.map((p) => [p.id, p])),
+        }));
+      const dates = next.workflow;
+      setDateDrafts((old) =>
+        old[id]?.edited
+          ? old
+          : {
+              ...old,
+              [id]: {
+                start: dates?.start_date || old[id]?.start || "",
+                end: dates?.end_date || old[id]?.end || "",
+              },
+            },
+      );
     } catch (cause) {
       if (selectedRef.current === id && sessionRef.current === identity)
         failure(cause);
@@ -102,8 +119,7 @@ export function App() {
   );
   useEffect(() => {
     setTask(null);
-    setStart("");
-    setEnd("");
+
     setBooking("");
     void refresh();
   }, [selected]);
@@ -138,6 +154,9 @@ export function App() {
   const answer =
     task?.plan.execution?.answer ||
     (state.revision >= (task?.instruction_revision ?? 0) ? state.text : "");
+  const dateDraft = selected
+    ? dateDrafts[selected] || { start: "", end: "" }
+    : { start: "", end: "" };
   const visibleProposals = Object.values(proposals).filter(
     (p) => p.task_id === selected,
   );
@@ -153,6 +172,7 @@ export function App() {
       reset();
       setSession(identity);
       setPassword("");
+      setRuntime(await request<Runtime>("/runtime"));
     } catch (cause) {
       setError(
         cause instanceof ApiError && cause.status === 401
@@ -228,8 +248,8 @@ export function App() {
         session.csrf_token,
         {
           task_id: selected,
-          start_date: start,
-          end_date: end,
+          start_date: dateDraft.start,
+          end_date: dateDraft.end,
           leave_type: "annual",
         },
       );
@@ -445,6 +465,13 @@ export function App() {
             <span className="eyebrow">PEOPLE ASSISTANT</span>
             <h1>{chatId ? "Conversation" : "Your everyday HR, simplified."}</h1>
           </div>
+          <span className="provider-badge" aria-label="LLM provider">
+            {task?.plan.execution?.provider || runtime?.provider || "provider"}
+            {task?.plan.execution?.model || runtime?.model
+              ? ` / ${task?.plan.execution?.model || runtime?.model}`
+              : ""}
+            {runtime && !runtime.configured ? " / not configured" : ""}
+          </span>
           <span className="scope-badge">◇ {session.company.slug} only</span>
         </header>
         <div className="chat-scroll">
@@ -542,8 +569,7 @@ export function App() {
                   )}
                   {task?.plan.execution?.error && (
                     <p className="error">
-                      The response is incomplete or a source is no longer
-                      available. Refresh to check current access.
+                      {providerError(task.plan.execution.error)}
                     </p>
                   )}
                   {sources.length > 0 && (
@@ -569,46 +595,23 @@ export function App() {
                     </div>
                   )}
                 </section>
-                {currentStatus === "completed" && (
-                  <section className="approval">
-                    <span className="eyebrow">LEAVE REQUEST</span>
-                    <h3>Prepare first. Confirm when ready.</h3>
-                    <p>A proposal does not reserve or deduct leave.</p>
-                    <form onSubmit={prepare} className="dates">
-                      <label>
-                        Start date
-                        <input
-                          type="date"
-                          value={start}
-                          onChange={(e) => setStart(e.target.value)}
-                          required
-                        />
-                      </label>
-                      <label>
-                        End date
-                        <input
-                          type="date"
-                          min={start}
-                          value={end}
-                          onChange={(e) => setEnd(e.target.value)}
-                          required
-                        />
-                      </label>
-                      <button
-                        disabled={
-                          busy ||
-                          visibleProposals.some((p) => p.status === "pending")
-                        }
-                      >
-                        Prepare proposal
-                      </button>
-                    </form>
-                    <small>
-                      Fictional demo convention: inclusive weekdays only; no
-                      holiday calendar.
-                    </small>
-                  </section>
-                )}
+                <LeaveRequestForm
+                  task={
+                    task &&
+                    task.instruction_revision >= state.revision &&
+                    !visibleProposals.length
+                      ? task
+                      : null
+                  }
+                  selectedTaskId={selected}
+                  draft={dateDraft}
+                  onChange={(value) => {
+                    if (selected)
+                      setDateDrafts((old) => ({ ...old, [selected]: value }));
+                  }}
+                  onSubmit={prepare}
+                  busy={busy}
+                />
                 {visibleProposals.map((p) => (
                   <section className="approval proposal" key={p.id}>
                     <span className="eyebrow">
@@ -729,5 +732,35 @@ export function App() {
         </footer>
       </main>
     </div>
+  );
+}
+
+function providerError(code: string) {
+  const errors: Record<string, string> = {
+    provider_missing_key:
+      "The live AI service is not configured. Ask the administrator to configure its server API key.",
+    provider_auth:
+      "The AI service rejected its server credentials. Contact the administrator.",
+    provider_invalid_request:
+      "The AI provider rejected the configured model or request options. Ask the administrator to check the provider configuration.",
+    provider_model_access:
+      "The configured AI model is not accessible. Ask the administrator to check model access.",
+    provider_timeout: "The AI service timed out. Please retry your request.",
+    provider_rate_limited:
+      "The AI provider reached a rate or quota limit. Check its API quota and billing; for temporary rate limits, wait before retrying.",
+    provider_quota_exhausted:
+      "OpenAI API credits are exhausted or an API usage limit was reached. Ask the administrator to check API billing and limits. Retrying will not resolve this billing issue.",
+    provider_unavailable:
+      "The live AI service is unavailable. Your data has not been booked automatically.",
+    provider_invalid_response:
+      "The AI service returned an invalid response. No action was approved.",
+    provider_context_limit:
+      "This request is too large. Shorten it or start a new conversation.",
+    provider_budget_exceeded:
+      "This task reached its AI request limit. Start a new request.",
+  };
+  return (
+    errors[code] ||
+    "The response is incomplete or a source is no longer available. Refresh to check current access."
   );
 }

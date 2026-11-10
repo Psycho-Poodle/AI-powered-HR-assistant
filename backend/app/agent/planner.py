@@ -13,19 +13,20 @@ async def plan_request(
     username: str,
     company_slug: str,
     companies: tuple[str, ...],
+    target_requests: tuple[str, ...] = (),
 ) -> Plan:
     raw = await llm.plan(original_request)
     plan = Plan.model_validate(raw.model_dump() if isinstance(raw, Plan) else raw)
+    targets = "\n".join((original_request, *target_requests))
     foreign_companies = [
         c
         for c in companies
-        if c != company_slug
-        and re.search(rf"\b{re.escape(c)}\b", original_request, re.I)
+        if c != company_slug and re.search(rf"\b{re.escape(c)}\b", targets, re.I)
     ]
     other_people = [
         name
         for name in ("maya", "leila", "ravi")
-        if name != username and re.search(rf"\b{name}\b", original_request, re.I)
+        if name != username and re.search(rf"\b{name}\b", targets, re.I)
     ]
     steps = []
     for step in plan.steps:
@@ -51,4 +52,4 @@ async def plan_request(
                 args=NoteArgs(message="Only your own HR records are available."),
             )
         steps.append(step)
-    return Plan(steps=tuple(steps))
+    return plan.model_copy(update={"steps": tuple(steps)})

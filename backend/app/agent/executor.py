@@ -6,6 +6,7 @@ from typing import Protocol
 from uuid import UUID
 
 from app.agent.checkpoints import operation_key
+from app.agent.errors import LLMFailure
 from app.agent.llm_protocol import LLM
 from app.agent.planner import plan_request
 from app.agent.state import (
@@ -60,9 +61,15 @@ async def execute(
             company_slug=company_slug,
             companies=companies,
         )
-    except Exception:
+    except Exception as error:
         state = state.model_copy(
-            update={"status": "failed", "outcome": "failed", "error": "planning_failed"}
+            update={
+                "status": "failed",
+                "outcome": "failed",
+                "error": error.code
+                if isinstance(error, LLMFailure)
+                else "planning_failed",
+            }
         )
         if persist:
             await persist(state)
@@ -226,12 +233,14 @@ async def execute(
         if not isinstance(answer, str) or len(answer) > 20000:
             raise ValueError("Invalid composition")
         final = final.model_copy(update={"answer": answer})
-    except Exception:
+    except Exception as error:
         final = final.model_copy(
             update={
                 "status": "failed",
                 "outcome": "partial",
-                "error": "composition_failed",
+                "error": error.code
+                if isinstance(error, LLMFailure)
+                else "composition_failed",
             }
         )
     if persist:

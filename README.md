@@ -2,12 +2,15 @@
 
 A tenant-scoped HR chat demo for Summit Dental and Pebble Retail. Python/FastAPI,
 PostgreSQL + pgvector, React/TypeScript, persisted task execution and SSE.
-**The shipped demo uses deterministic FakeLLM, not a live LLM provider.**
+The Docker demo defaults to **Google Gemini (`gemini-3.6-flash`)**, with optional
+**OpenAI Responses API (`gpt-5.4-mini`)** support. Automated tests
+explicitly select deterministic FakeLLM and never require an external API key.
 
 ## Run the demo
 
 Requires Docker with Linux containers and Compose. Initial builds download
-dependencies and pinned CPU embedding weights; runtime is local/keyless.
+dependencies and pinned CPU embedding weights. Embeddings remain local; live
+planning and answers require the selected provider's network access and API key.
 Run from the repository root.
 
 PowerShell (preserves an existing `.env`):
@@ -20,6 +23,27 @@ Edit `.env`: choose **different URL-safe hexadecimal** `POSTGRES_PASSWORD` and
 `TEST_POSTGRES_PASSWORD`, set a random `SESSION_SECRET` of at least 32 characters,
 `APP_ORIGIN=http://localhost:5173`, and `SESSION_COOKIE_SECURE=false` for local
 HTTP only. Existing volumes require their original database credentials.
+
+For the real demo, edit the ignored local `.env` in your editor:
+
+```dotenv
+LLM_PROVIDER=gemini
+GEMINI_MODEL=gemini-3.6-flash
+GEMINI_API_KEY=<your local Gemini API key>
+```
+
+Never put the key in frontend variables, Git, screenshots or chat. To run a
+keyless manual demo instead, set `LLM_PROVIDER=fake`. Compose defaults to `gemini`;
+direct host Python defaults to `fake` unless explicitly configured through its
+environment (host settings do not automatically read `.env`). Missing live
+credentials produce a task error; the server never silently switches providers.
+
+Create a Gemini key in [Google AI Studio](https://aistudio.google.com/api-keys).
+Model/quota access depends on your Google project; free quota is not unlimited.
+To select OpenAI instead, set `LLM_PROVIDER=openai`,
+`OPENAI_MODEL=gpt-5.4-mini` and `OPENAI_API_KEY` in the same local `.env`.
+Both keys may coexist; only the selected provider receives requests. Recreate
+the API after changing provider settings; there is no automatic paid fallback.
 
 ```powershell
 docker compose --profile ui config -q
@@ -34,6 +58,15 @@ docker compose --profile ui up -d --wait
 ```
 
 Open **http://localhost:5173**. All three accounts use the password chosen above.
+For an existing seeded installation, skip seeding/migration/index steps unless
+needed; apply a provider change with `docker compose --profile ui up -d --build api frontend`.
+After signing in, the header shows the configured provider/model. A completed
+task's authenticated `GET /api/v1/tasks/{id}` exposes
+`plan.execution.provider`, `model` and `usage` (calls/input/output tokens).
+Verify `gemini` (or explicitly selected `openai`), the model and successful usage;
+a badge alone
+does not prove a successful provider call. `/api/v1/runtime` reports configuration
+only and never returns the key.
 Configurable ports: `FRONTEND_PORT=5173`, `API_PORT=8000`, `POSTGRES_PORT=5432`,
 `TEST_POSTGRES_PORT=5433`. `APP_ORIGIN` must match the exact UI origin. Nginx
 proxies `/api` without SSE buffering. Use HTTPS/secure cookies outside local
@@ -57,14 +90,17 @@ All accounts use your chosen seed password.
 1. Ask **"Explain the late attendance policy."** Maya gets Summit's one-day pay
    cut; Ravi gets warning only. Both are the rule for being late three times.
 2. **"My remaining leave balance"** returns 12/5 from SQL. Leila has no invented
-   balance. Only Leila can retrieve Summit's CEO salary-band document; no pay
-   amount was supplied. She still cannot access Pebble.
+   balance. Only Leila can retrieve Summit's fictional CEO salary-band document.
+   Its demo amounts were not supplied by the assignment. She still cannot access Pebble.
 3. Maya: **"Tell me my remaining leaves, explain the late attendance policy,
    and prepare a leave request for three days."** Inspect separate tool results;
    missing dates are clarified. Send **"Use plain language"** while running:
    same task ID, original retained. Fast tasks may finish first; a controllably
    paused browser test proves genuine overlap.
-4. Choose future Monday-Wednesday dates on a completed task. **Prepare proposal**
+4. Only an explicit request such as **"Help me apply for leave"** opens the date
+   form. Greetings, balances, policies and ambiguous questions do not. A dated
+   follow-up can continue an initiated workflow in the same conversation.
+   Choose future Monday-Wednesday dates. **Prepare proposal**
    leaves bookings/balance unchanged; **Confirm booking** books once (untouched
    Maya: 12 to 9). Cancel is separate. Counting inclusive weekdays is an explicit
    **fictional demo convention**, without a verified holiday calendar.
@@ -88,7 +124,7 @@ All accounts use your chosen seed password.
   booking, debit, history and audit. Locks/uniqueness prevent duplication and
   overdraw; no transaction waits open for human approval.
 - **Recommendations:** keep the monolith, typed tools, SQL authorization, real-vector
-  tests and approvals. Add live LLM, SSO/distributed sessions, least-privilege DB
+  tests and approvals. Add SSO/distributed sessions, least-privilege DB
   roles, rate limits, monitoring and backups. For existing separate company DBs,
   route authenticated tenants through a server-controlled registry to separate
   credentials/pools and migrations/backups; avoid cross-DB HR joins. Stronger
@@ -123,9 +159,37 @@ indexing, UI proxy, restart/replay, DB recovery and log canaries before cleanup.
 Neither resets configured databases. Git Bash/Linux also supports
 `bash scripts/verify_demo.sh --docker`.
 
-Phase 12 clean-run: **passed** from a source-only snapshot and fresh Docker
-volumes. Current focused checks: **16 passed, 1 warning**; frontend **6 passed**;
-typecheck/build passed. Details and exclusions are in the audit linked below.
+The driver strips `OPENAI_API_KEY`, `GEMINI_API_KEY` and `GOOGLE_API_KEY`, and sets
+`LLM_PROVIDER=fake` in the test subprocess. The suite blocks real OpenAI/Google
+transport; SDK tests use
+`httpx.MockTransport`. Docker verification also explicitly chooses fake. Local
+embedding weights must first be downloaded; subsequent vector tests run offline.
+Run lint with `.\.venv\Scripts\python.exe -m ruff check backend scripts` and
+frontend formatting with `cd frontend; npm.cmd exec -- prettier --check src tests package.json`.
+
+Live errors are shown in the chat: missing key/authentication means configure
+the local key and recreate the API container; model-access errors mean check
+`GEMINI_MODEL` / `OPENAI_MODEL` and your account's model access. Temporary request/token rate
+limits require waiting; `provider_quota_exhausted` requires checking OpenAI API
+billing, available credit and applicable usage limits. `credit_balance_exhausted`
+is not fixed by repeatedly retrying. Network/timeout errors mean check API connectivity/proxy/firewall
+and optionally `GEMINI_TIMEOUT_SECONDS` / `OPENAI_TIMEOUT_SECONDS`. Invalid or oversized output/context
+fails the task visibly. No provider failure creates a booking or fake answer.
+Never paste raw environment/configuration or provider responses into reports.
+Provider architecture and limits: [ADR 0012](docs/adr/0012-openai-provider-and-intent-workflows.md).
+Gemini provider/default and current verification: [ADR 0013](docs/adr/0013-gemini-provider.md).
+
+Optional **paid, external** SDK-only smoke (not part of the offline suite):
+`.\.venv\Scripts\python.exe scripts/verify_live_llm.py`. It reads the ignored local
+`.env`, sends a greeting without HR records, and reports provider/model/usage;
+it does not verify browser wiring. Verify a live browser task separately using
+the task metadata described above. No live call is claimed without success.
+
+The earlier Phase 12 clean-run passed from a source-only snapshot and fresh Docker
+volumes. Its historical details and exclusions are in the audit linked below.
+Current provider/workflow changes and exact verification outputs are recorded in
+[Gemini verification](docs/gemini_verification.md), with the earlier OpenAI
+results in [live integration verification](docs/live_llm_verification.md).
 
 Last Phase 11 full result: **338 passed, 1 warning**, no skips; frontend **6 passed**,
 typecheck/build passed, clean npm install audited **0 vulnerabilities**. See the
@@ -134,7 +198,7 @@ typecheck/build passed, clean npm install audited **0 vulnerabilities**. See the
 
 ## Limits, skipped work and hours
 
-Skipped: live-provider/general language understanding, enterprise SSO,
+Skipped: enterprise SSO,
 production deployment, upload UI/virus scanning, payroll/HRIS integration, real
 holiday rules, Python lockfile and immutable image digests. Tool progress is live;
 answer chunks follow completed composition. Cold synchronous search exceeded a
@@ -145,8 +209,8 @@ A DB outage delays durable status until recovery; uncheckpointed reads may retry
 but confirmed writes are not autonomously replayed. Packaged access logs redact
 queries; local Uvicorn needs `--log-config backend/logging.json` with
 `--app-dir backend`. Canary checks are not universal PII guarantees. Additional
-policies are labeled fictional; no complete handbook or CEO monetary figure
-was provided.
+policies and the supplementary CEO salary band are labeled fictional; the original
+assignment provided neither a complete handbook nor a CEO monetary figure.
 
 **Actual engineering hours: 11 hours, developer-reported.** First day: 3 hours;
 subsequent work was described as 2-hour sessions. See the

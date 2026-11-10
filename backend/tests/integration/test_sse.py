@@ -93,14 +93,14 @@ def live(booking_engine, monkeypatch):
         assert not thread.is_alive(), "Stream prevented HTTP server shutdown"
 
 
-def enqueue(live):
+def enqueue(live, message="my balance"):
     client, csrf, gate, _, _ = live
     conversation = client.post("/api/v1/conversations", json={}, headers=csrf).json()[
         "id"
     ]
     response = client.post(
         f"/api/v1/conversations/{conversation}/tasks",
-        json={"message": "my balance"},
+        json={"message": message},
         headers=csrf,
     )
     assert response.status_code == 202
@@ -413,7 +413,7 @@ def test_migration_baselines_existing_tasks_without_deleting_logs(booking_engine
 
 def test_proposal_events_replay_after_execution_without_duplicate_writes(live):
     client, csrf, gate, engine, _ = live
-    task_id = enqueue(live)
+    task_id = enqueue(live, "Prepare a leave request")
     gate.release.set()
     finished(client, task_id)
     cursor = event_rows(engine, task_id)[-1]["seq"]

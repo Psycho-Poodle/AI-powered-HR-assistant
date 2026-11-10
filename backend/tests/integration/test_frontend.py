@@ -21,14 +21,18 @@ from app.auth.dependencies import get_db
 from app.core.config import AuthSettings, Settings, get_auth_settings
 from app.db.models import LeaveBalance, LeaveRequest, Task, TaskMessage
 from app.seed.load_seed import seed_id
+from app.services.ingestion import index_seed_policies
 
 pytestmark = pytest.mark.integration
 ROOT = Path(__file__).resolve().parents[3]
 
 
-def test_browser_workspace(booking_engine, monkeypatch):
+def test_browser_workspace(booking_engine, real_embeddings, monkeypatch):
     if not (ROOT / "frontend/node_modules/vite/bin/vite.js").exists():
         pytest.skip("Run npm ci in frontend before the browser smoke test")
+    # Mirror the documented setup: index real policies before serving the UI.
+    with booking_engine.begin() as connection:
+        index_seed_policies(connection, real_embeddings)
     backend_socket = socket.socket()
     backend_socket.bind(("127.0.0.1", 0))
     backend_url = f"http://127.0.0.1:{backend_socket.getsockname()[1]}"

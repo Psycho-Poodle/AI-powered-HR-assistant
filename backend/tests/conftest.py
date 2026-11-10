@@ -16,6 +16,30 @@ from app.db.base import Base
 from app.seed.load_seed import DEFAULT_SEED_DIR, load_seed
 
 
+@pytest.fixture(autouse=True)
+def offline_llm_only(monkeypatch):
+    """Explicit test-only provider override, plus a transport-level egress guard."""
+    import httpx
+
+    monkeypatch.setenv("LLM_PROVIDER", "fake")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+    original = httpx.AsyncClient.send
+
+    async def guarded(client, request, *args, **kwargs):
+        if request.url.host in {
+            "api.openai.com",
+            "generativelanguage.googleapis.com",
+        } and not isinstance(client._transport, httpx.MockTransport):
+            raise AssertionError(
+                "External LLM requests are forbidden in automated tests"
+            )
+        return await original(client, request, *args, **kwargs)
+
+    monkeypatch.setattr(httpx.AsyncClient, "send", guarded)
+
+
 @pytest.fixture(scope="session")
 def migrated_engine():
     url = os.environ.get("TEST_DATABASE_URL")
@@ -137,8 +161,26 @@ def booking_engine(migrated_engine):
                         company_id=seed_id("company", company),
                         owner_user_id=seed_id("user", company, person),
                         conversation_id=conversation,
-                        original_request="Fictional proposal test",
+                        original_request="Prepare a leave request",
                         status="completed",
+                        plan={
+                            "execution": {
+                                "task_id": str(seed_id("proposal-test-task", person)),
+                                "original_request": "Prepare a leave request",
+                                "status": "completed",
+                                "workflow": {
+                                    "kind": "leave_request",
+                                    "task_id": str(
+                                        seed_id("proposal-test-task", person)
+                                    ),
+                                    "origin_task_id": str(
+                                        seed_id("proposal-test-task", person)
+                                    ),
+                                    "revision": 0,
+                                    "status": "collecting_dates",
+                                },
+                            }
+                        },
                     )
                 )
         yield engine

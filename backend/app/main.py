@@ -11,7 +11,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.engine import make_url
 from starlette.exceptions import HTTPException
 
-from app.agent.fake_llm import FakeLLM
+from app.agent.providers import provider_factory
 from app.agent.task_runner import TaskRunner
 from app.api import auth, conversations, leave, me, policies, tasks
 from app.auth.dependencies import get_engine
@@ -42,7 +42,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 connect_args={"connect_timeout": 5},
             )
         )
-        runner = TaskRunner(runner_engine, getattr(app.state, "llm_factory", FakeLLM))
+        runner = TaskRunner(
+            runner_engine, getattr(app.state, "llm_factory", None) or provider_factory()
+        )
         app.state.task_runner = runner
         await runner.start()
     try:

@@ -1,6 +1,7 @@
 """Database configuration loaded at startup, never at import time."""
 
 from functools import lru_cache
+from typing import Literal
 
 from pydantic import Field, HttpUrl, PostgresDsn, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -25,6 +26,28 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
+
+
+class LLMSettings(BaseSettings):
+    model_config = SettingsConfigDict(extra="ignore")
+    # Safe host default; Compose explicitly selects Gemini for the live demo.
+    llm_provider: Literal["fake", "openai", "gemini"] = "fake"
+    gemini_model: str = Field(default="gemini-3.6-flash", min_length=1, max_length=100)
+    gemini_api_key: SecretStr | None = None
+    gemini_timeout_seconds: float = Field(default=30, ge=1, le=120)
+    gemini_max_retries: int = Field(default=2, ge=0, le=3)
+    gemini_max_output_tokens: int = Field(default=4096, ge=256, le=8192)
+    openai_model: str = Field(default="gpt-5.4-mini", min_length=1, max_length=100)
+    openai_api_key: SecretStr | None = None
+    openai_timeout_seconds: float = Field(default=30, ge=1, le=120)
+    openai_max_retries: int = Field(default=2, ge=0, le=3)
+    openai_max_output_tokens: int = Field(default=2048, ge=256, le=8192)
+    llm_max_context_chars: int = Field(default=24000, ge=4000, le=64000)
+    llm_max_calls_per_task: int = Field(default=12, ge=2, le=64)
+
+
+def get_llm_settings() -> LLMSettings:
+    return LLMSettings()
 
 
 class AuthSettings(BaseSettings):

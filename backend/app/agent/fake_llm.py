@@ -18,7 +18,9 @@ from app.agent.state import (
     TalkStep,
     ValidationStep,
 )
+from app.agent.workflows import infer_intents
 from app.schemas.hr import BalanceResponse, LeaveValidationInput, LeaveValidationResult
+from app.schemas.workflow import ConversationContext
 from app.tools.policy import PolicyToolResult
 
 
@@ -40,9 +42,18 @@ class FakeLLMPause:
 class FakeLLM:
     def __init__(self, pause=None):
         self.pause = pause
+        self.context = ConversationContext()
+
+    def set_context(self, context):
+        self.context = context
 
     async def plan(self, original_request: str) -> Plan:
         text = original_request.lower()
+        continuation = self.context.active_leave is not None and bool(
+            re.search(r"\d{4}-\d{2}-\d{2}", text)
+        )
+        if continuation:
+            text = "prepare leave request " + text
         steps = []
         if re.search(r"balance|remaining|days left|how many.*leave", text):
             steps.append(BalanceStep(id="balance"))
@@ -100,16 +111,33 @@ class FakeLLM:
                 )
             )
         if not steps:
-            steps.append(
-                TalkStep(
-                    id="talk",
-                    args=NoteArgs(
-                        message="I can read your HR records, find authorized policies, "
-                        "or validate dated annual leave without booking."
-                    ),
+            if re.search(r"\b(?:maybe|perhaps|not sure)\b.*\bleave\b", text):
+                steps.append(
+                    ClarifyStep(
+                        id="clarify",
+                        args=NoteArgs(
+                            message="Do you want policy information, your balance, "
+                            "or help applying for leave?"
+                        ),
+                    )
                 )
-            )
-        return Plan(steps=tuple(steps))
+            else:
+                steps.append(
+                    TalkStep(
+                        id="talk",
+                        args=NoteArgs(
+                            message="I can read your HR records, "
+                            "find authorized policies, "
+                            "or validate dated annual leave without booking."
+                        ),
+                    )
+                )
+        intents = infer_intents(original_request, steps)
+        if continuation:
+            intents = (*intents, "leave_continuation")
+        return Plan(
+            steps=tuple(steps), intents=intents, leave_evidence=original_request
+        )
 
     async def compose(
         self, original_request: str, subtasks: tuple[SubtaskResult, ...]

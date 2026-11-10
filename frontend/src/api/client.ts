@@ -40,6 +40,9 @@ export interface Execution {
   revision: number;
   subtasks: Result[];
   error?: string;
+  provider?: string;
+  model?: string | null;
+  usage?: Record<string, number>;
   plan?: {
     steps: { tool: string; args: { start_date?: string; end_date?: string } }[];
   };
@@ -51,6 +54,29 @@ export interface Task {
   instruction_revision: number;
   instructions: { revision: number; instruction: string }[];
   plan: { execution?: Execution };
+  workflow?: LeaveWorkflow | null;
+  proposals?: Proposal[];
+}
+export interface LeaveWorkflow {
+  kind: "leave_request";
+  task_id: string;
+  origin_task_id: string;
+  revision: number;
+  status:
+    | "collecting_dates"
+    | "ready"
+    | "proposed"
+    | "confirmed"
+    | "cancelled"
+    | "expired";
+  start_date?: string | null;
+  end_date?: string | null;
+  proposal_id?: string | null;
+}
+export interface Runtime {
+  provider: "fake" | "openai" | "gemini";
+  model: string | null;
+  configured: boolean;
 }
 export interface Proposal {
   id: string;

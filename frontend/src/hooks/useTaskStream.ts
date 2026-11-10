@@ -68,6 +68,7 @@ export function useTaskStream(
                 }
                 if (
                   frame.kind === "task.updated" ||
+                  frame.kind === "task.workflow" ||
                   frame.kind === "proposal.updated"
                 )
                   update.current();

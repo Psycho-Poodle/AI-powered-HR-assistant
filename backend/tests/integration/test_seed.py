@@ -59,8 +59,13 @@ def test_repeatable_seed_and_assignment_facts(db):
     salary = next(p for p in policies if p["slug"] == "ceo-salary-band")
     assert salary["visibility"] == "specific_user"
     assert salary["allowed_user_id"] == seed_id("user", "summit", "leila")
-    assert "does not specify a monetary band" in salary["body"]
-    assert not any(character.isdigit() for character in salary["body"])
+    # Monetary values are supplementary fiction, never original assignment facts.
+    assert salary["provenance"] == "fictional_demo" and salary["is_demo"]
+    assert "FICTIONAL DEMONSTRATION DATA" in salary["title"]
+    assert "FICTIONAL DEMONSTRATION DATA" in salary["body"]
+    # Supplementary values may change; the database must contain the exact source.
+    salary_source = DEFAULT_SEED_DIR / "policies" / salary["source_filename"]
+    assert salary["body"] == salary_source.read_bytes().decode("utf-8")
     assert any("one-day pay cut" in p["body"] for p in policies)
     assert any("warning only" in p["body"] for p in policies)
     poison = next(p for p in policies if p["slug"] == "poisoned-policy")

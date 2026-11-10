@@ -12,6 +12,7 @@ from app.schemas.hr import (
     LeaveValidationResult,
     ProfileResponse,
 )
+from app.schemas.workflow import Intent, LeaveWorkflow
 from app.tools.policy import PolicyToolResult
 
 
@@ -98,6 +99,8 @@ PlanStep = Annotated[
 
 class Plan(FrozenModel):
     steps: tuple[PlanStep, ...] = Field(min_length=1, max_length=8)
+    intents: tuple[Intent, ...] = ()
+    leave_evidence: str | None = Field(default=None, max_length=4000)
 
     @model_validator(mode="after")
     def validate_dag(self):
@@ -182,3 +185,7 @@ class ExecutionState(FrozenModel):
     revision: int = 0
     instructions: tuple[str, ...] = ()
     retained_results: tuple[SubtaskResult, ...] = ()
+    workflow: LeaveWorkflow | None = None
+    provider: str = "fake"
+    model: str | None = None
+    usage: dict[str, int] = Field(default_factory=dict)

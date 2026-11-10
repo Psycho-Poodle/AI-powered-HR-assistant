@@ -14,6 +14,35 @@ const event = (
   payload: Record<string, unknown> = { text: "hello" },
 ): Event => ({ task_id: "a", seq, revision, payload });
 describe("task stream reducer", () => {
+  it("replays workflow once, clears on revision and isolates task switches", () => {
+    const workflow = {
+      kind: "leave_request",
+      task_id: "a",
+      origin_task_id: "a",
+      revision: 0,
+      status: "collecting_dates",
+    };
+    const first = reduce(
+      initial("a"),
+      event(1, 0, { workflow }),
+      "task.workflow",
+    );
+    assert.equal(first.workflow?.task_id, "a");
+    assert.equal(
+      reduce(first, event(1, 0, { workflow }), "task.workflow"),
+      first,
+    );
+    const revised = reduce(first, event(2, 1), "task.updated");
+    assert.equal(revised.workflow, null);
+    assert.equal(
+      reduce(revised, event(3, 0, { workflow }), "task.workflow").workflow,
+      null,
+    );
+    assert.equal(
+      reduce(initial("b"), event(4, 0, { workflow }), "task.workflow").workflow,
+      null,
+    );
+  });
   it("applies replayed deltas once and isolates tasks", () => {
     const first = reduce(initial("a"), event(1), "assistant.delta");
     assert.equal(first.text, "hello");

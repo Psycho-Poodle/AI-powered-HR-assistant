@@ -1,7 +1,7 @@
 [
   {"company": "summit", "slug": "late-arrival", "title": "Late arrival policy", "version": 1, "visibility": "all", "status": "published", "provenance": "assignment", "file": "summit/late-arrival.md"},
   {"company": "pebble", "slug": "late-arrival", "title": "Late arrival policy", "version": 1, "visibility": "all", "status": "published", "provenance": "assignment", "file": "pebble/late-arrival.md"},
-  {"company": "summit", "slug": "ceo-salary-band", "title": "CEO salary band (amount unspecified)", "version": 1, "visibility": "specific_user", "allowed_user": "leila", "status": "published", "provenance": "assignment", "file": "summit/ceo-salary-band.md"},
+  {"company": "summit", "slug": "ceo-salary-band", "title": "CEO salary band - FICTIONAL DEMONSTRATION DATA", "version": 1, "visibility": "specific_user", "allowed_user": "leila", "status": "published", "provenance": "fictional_demo", "file": "summit/ceo-salary-band.md"},
   {"company": "summit", "slug": "poisoned-policy", "title": "HR policy notes (untrusted source)", "version": 1, "visibility": "all", "status": "published", "provenance": "assignment", "file": "summit/poisoned-policy.md"},
   {"company": "summit", "slug": "annual-leave", "title": "Annual leave - FICTIONAL DEMONSTRATION DATA", "version": 1, "visibility": "all", "status": "published", "provenance": "fictional_demo", "file": "summit/annual-leave.md"},
   {"company": "pebble", "slug": "annual-leave", "title": "Annual leave - FICTIONAL DEMONSTRATION DATA", "version": 1, "visibility": "all", "status": "published", "provenance": "fictional_demo", "file": "pebble/annual-leave.md"}

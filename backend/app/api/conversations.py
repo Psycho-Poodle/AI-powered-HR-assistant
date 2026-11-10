@@ -10,9 +10,12 @@ from sqlalchemy import Engine, insert, select, update
 from app.agent.state import ExecutionState
 from app.agent.tool_registry import filter_policy_results, recheck_actor
 from app.auth.dependencies import CurrentActor, Db, get_engine, reject_query_parameters
-from app.db.models import Conversation, Message, Task, TaskMessage
+from app.core.config import get_llm_settings
+from app.db.models import ActionProposal, Conversation, Message, Task, TaskMessage
 from app.repositories.tasks import append_note, invalidate
 from app.repositories.tasks import owned as owned_task
+from app.services.proposals import view as proposal_view
+from app.services.task_context import effective_workflow
 from app.stream import events
 
 router = APIRouter(
@@ -27,6 +30,19 @@ def get_job_engine() -> Engine:
 
 
 JobEngine = Annotated[Engine, Depends(get_job_engine)]
+
+
+@router.get("/runtime")
+def runtime(actor: CurrentActor):
+    settings = get_llm_settings()
+    model = getattr(settings, f"{settings.llm_provider}_model", None)
+    key = getattr(settings, f"{settings.llm_provider}_api_key", None)
+    return {
+        "provider": settings.llm_provider,
+        "model": model,
+        "configured": settings.llm_provider == "fake"
+        or bool(key and key.get_secret_value().strip()),
+    }
 
 
 class ConversationInput(BaseModel):
@@ -207,6 +223,20 @@ def task(task_id: UUID, actor: CurrentActor, connection: Db):
     if row is None:
         raise HTTPException(404, "Not found")
     result = dict(row)
+    workflow = effective_workflow(connection, row, actor)
+    result["workflow"] = workflow.model_dump(mode="json") if workflow else None
+    result["proposals"] = [
+        proposal_view(p).model_dump(mode="json")
+        for p in connection.execute(
+            select(ActionProposal)
+            .where(
+                ActionProposal.task_id == task_id,
+                ActionProposal.company_id == actor.company_id,
+                ActionProposal.owner_user_id == actor.user_id,
+            )
+            .order_by(ActionProposal.created_at)
+        ).mappings()
+    ]
     result["instructions"] = [
         dict(n)
         for n in connection.execute(

@@ -53,8 +53,68 @@ try {
     (await page.getByTestId("task-id").textContent()).trim(),
     taskId,
   );
+  assert.equal(await page.getByTestId("leave-request-form").count(), 0);
+  async function sendCompleted(message) {
+    await page
+      .getByRole("button", { name: "Send message", exact: true })
+      .waitFor();
+    await composer.fill(message);
+    const queued = page.waitForResponse(
+      (r) =>
+        r.request().method() === "POST" &&
+        /\/conversations\/[^/]+\/tasks$/.test(new URL(r.url()).pathname),
+    );
+    await page
+      .getByRole("button", { name: "Send message", exact: true })
+      .click();
+    const id = (await (await queued).json()).task_id;
+    await page.waitForFunction(
+      (id) =>
+        document
+          .querySelector('[data-testid="task-id"]')
+          ?.textContent.trim() === id,
+      id,
+    );
+    await page
+      .getByRole("button", { name: "Send message", exact: true })
+      .waitFor();
+  }
+  for (const message of [
+    "Hello",
+    "Explain the late attendance policy",
+    "Maybe leave?",
+  ]) {
+    await sendCompleted(message);
+    if (message.includes("policy"))
+      await page
+        .getByText(/one-day pay cut/)
+        .first()
+        .waitFor();
+    assert.equal(await page.getByTestId("leave-request-form").count(), 0);
+  }
+  await sendCompleted("Help me apply for three days of leave");
+  await page.getByTestId("leave-request-form").waitFor();
   await page.getByLabel("Start date", { exact: true }).fill("2027-01-04");
   await page.getByLabel("End date", { exact: true }).fill("2027-01-06");
+  await page.getByRole("button", { name: /New conversation/ }).click();
+  assert.equal(await page.getByTestId("leave-request-form").count(), 0);
+  await page
+    .getByRole("button", { name: /My remaining leave balance/ })
+    .click();
+  await page.getByTestId("leave-request-form").waitFor();
+  await page.getByRole("button", { name: "Request 1", exact: true }).click();
+  await page.getByText(/In plain language:/).waitFor();
+  assert.equal(await page.getByTestId("leave-request-form").count(), 0);
+  await page.getByRole("button", { name: "Request 5", exact: true }).click();
+  await page.getByTestId("leave-request-form").waitFor();
+  assert.equal(
+    await page.getByLabel("Start date", { exact: true }).inputValue(),
+    "2027-01-04",
+  );
+  assert.equal(
+    await page.getByLabel("End date", { exact: true }).inputValue(),
+    "2027-01-06",
+  );
   await page
     .getByRole("button", { name: "Prepare proposal", exact: true })
     .click();
@@ -87,6 +147,11 @@ try {
   snapshot = await (await page.request.get("/api/v1/_test/inspect")).json();
   assert.equal(snapshot.requests, 1);
   assert.equal(snapshot.balance, "9.00");
+  await page.getByRole("button", { name: "Request 1", exact: true }).click();
+  await page.getByText(/In plain language:/).waitFor();
+  await page.getByRole("button", { name: "Request 5", exact: true }).click();
+  await page.getByText("CONFIRMED", { exact: true }).waitFor();
+  assert.equal(await page.getByTestId("leave-request-form").count(), 0);
   await page.getByRole("button", { name: "Sign out", exact: true }).click();
   await page.getByLabel("Username", { exact: true }).fill("leila");
   await page

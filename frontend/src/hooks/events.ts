@@ -1,4 +1,4 @@
-import type { Status } from "../api/client";
+import type { Status, LeaveWorkflow } from "../api/client";
 export interface Event {
   task_id: string;
   seq: number;
@@ -13,6 +13,7 @@ export interface StreamState {
   status: Status;
   tools: Record<string, { tool: string; status: string }>;
   proposalIds: string[];
+  workflow: LeaveWorkflow | null;
 }
 export function initial(taskId: string): StreamState {
   return {
@@ -23,6 +24,7 @@ export function initial(taskId: string): StreamState {
     status: "queued",
     tools: {},
     proposalIds: [],
+    workflow: null,
   };
 }
 export function reduce(
@@ -39,8 +41,15 @@ export function reduce(
   let next = { ...state, cursor: event.seq };
   if (event.revision < state.revision) return next;
   if (event.revision > state.revision)
-    next = { ...next, revision: event.revision, text: "" };
+    next = { ...next, revision: event.revision, text: "", workflow: null };
   const p = event.payload;
+  if (kind === "task.workflow") {
+    const w = p.workflow as LeaveWorkflow | null;
+    next.workflow =
+      w && w.task_id === state.taskId && w.revision === event.revision
+        ? w
+        : null;
+  }
   if (kind === "assistant.delta")
     next.text += typeof p.text === "string" ? p.text : "";
   if (kind === "task.status" || kind === "task.terminal")

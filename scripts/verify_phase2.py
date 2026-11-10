@@ -125,11 +125,14 @@ def main() -> int:
         env["PHASE2_DISPOSABLE_DATABASE"] = database
         env["DEV_CLUSTER_IDENTIFIER"] = ids["db"]
         env["HF_HUB_OFFLINE"] = "1"
+        # Test-only override: never inherit a developer's live provider choice.
+        env["LLM_PROVIDER"] = "fake"
         env["TRANSFORMERS_OFFLINE"] = "1"
         env["HF_HUB_DISABLE_TELEMETRY"] = "1"
         env.pop("HF_TOKEN", None)
         env.pop("OPENAI_API_KEY", None)
         env.pop("GEMINI_API_KEY", None)
+        env.pop("GOOGLE_API_KEY", None)
         return subprocess.call(
             [
                 sys.executable,

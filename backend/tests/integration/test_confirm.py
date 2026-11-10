@@ -84,8 +84,19 @@ def extra_task(engine):
                 company_id=actor().company_id,
                 owner_user_id=actor().user_id,
                 conversation_id=seed_id("proposal-test-conversation", "maya"),
-                original_request="Fictional second proposal",
+                original_request="Prepare a second leave request",
                 status="completed",
+                plan={
+                    "execution": {
+                        "workflow": {
+                            "kind": "leave_request",
+                            "task_id": str(identifier),
+                            "origin_task_id": str(identifier),
+                            "revision": 0,
+                            "status": "collecting_dates",
+                        }
+                    }
+                },
             )
         )
     return identifier
