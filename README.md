@@ -212,8 +212,8 @@ queries; local Uvicorn needs `--log-config backend/logging.json` with
 policies and the supplementary CEO salary band are labeled fictional; the original
 assignment provided neither a complete handbook nor a CEO monetary figure.
 
-**Actual engineering hours: 11 hours, developer-reported.** First day: 3 hours;
-subsequent work was described as 2-hour sessions. See the
+**Actual engineering hours: 25 hours, developer-reported.** First day: 4 hours;
+subsequent work was described as 3-hour sessions. See the
 [developer time record](docs/developer_time_log.md). Dates and individual later
 entries were not supplied; no timestamp-based estimate is substituted.
 
